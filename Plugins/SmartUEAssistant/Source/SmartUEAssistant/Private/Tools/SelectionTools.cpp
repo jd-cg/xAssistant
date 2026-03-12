@@ -224,9 +224,9 @@ FAIToolResult FSelectActorsByRuleTool::Execute(const TSharedPtr<FJsonObject>& Ar
     Data->SetNumberField(TEXT("affected"), Affected);
     Data->SetStringField(TEXT("op"), Op);
     if (!SavedPreset.IsEmpty()) Data->SetStringField(TEXT("preset_saved"), SavedPreset);
-    return {true, FString::Printf(TEXT("匹配 %d，操作 %s 影响 %d"), Matched.Num(), *Op, Affected), Data};
+    return {true, FString::Printf(TEXT("匹配对象： %d，操作行为： %s 成功修改 %d"), Matched.Num(), *Op, Affected), Data};
 }
-// �?自动注册工具
+// �?自动注册工具
 #include "ToolAutoRegister.h"
 
 REGISTER_EDITOR_TOOL(FSelectActorsByRuleTool)

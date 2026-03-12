@@ -16,7 +16,10 @@
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Framework/Application/SlateApplication.h"
 
+
+
 // 新增：高级布局与样式
+#include "SWebBrowser.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SSpacer.h"
@@ -24,12 +27,14 @@
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Framework/Application/SlateApplication.h"
 
+
+
 #if WITH_EDITOR
 #include "Editor.h" // 为 GEditor 提供声明
 #endif
 
 #define LOCTEXT_NAMESPACE "SAIAssistantWindow"
-
+#define LOCTEXT_NAMESPACE "AIAssistant"
 void SAIAssistantWindow::Construct(const FArguments& InArgs)
 {
     // 创建聊天记录滚动框
@@ -355,8 +360,10 @@ FReply SAIAssistantWindow::OnSendMessage()
     USmartUEAssistantSettings* Settings = GetMutableDefault<USmartUEAssistantSettings>();
     const bool bAutoExecuteSafeTools = Settings ? Settings->bAutoExecuteSafeTools : true;
 
+
+    
     // 调用服务
-    const bool bEnableTools = true;
+    const bool bEnableTools = ShouldEnableTools(UserInput);//hys 根据用户输入关键词判断是否需要工具
     const bool bDryRun = !bAutoExecuteSafeTools; // 关闭自动执行时，先预览
     const bool bUserConfirmed = false;           // 首次发送不视为已确认
 
@@ -364,17 +371,63 @@ FReply SAIAssistantWindow::OnSendMessage()
     bRequestInFlight = true;
     UpdateRequestUI();
 
-    FAIService::Get().SendMessageWithTools(
-        UserInput,
-        FOnAIMessageReceived::CreateSP(SharedThis(this), &SAIAssistantWindow::OnAIResponseReceived),
-        /*bEnableTools*/ bEnableTools,
-        /*bDryRun*/ bDryRun,
-        /*bUserConfirmed*/ bUserConfirmed
-    );
+    //hys 根据判断选择调用哪个函数
+    if (bEnableTools)
+    {
+        FAIService::Get().SendMessageWithTools(
+            UserInput,
+            FOnAIMessageReceived::CreateSP(SharedThis(this), &SAIAssistantWindow::OnAIResponseReceived),
+            /*bEnableTools*/ true,
+            /*bDryRun*/ bDryRun,
+            /*bUserConfirmed*/ bUserConfirmed
+        );
+    }
+    else
+    {
+        // 无工具，轻量版
+        FAIService::Get().SendMessage(
+            UserInput,
+            FOnAIMessageReceived::CreateSP(SharedThis(this), &SAIAssistantWindow::OnAIResponseReceived)
+        );
+    }
 
     return FReply::Handled();
 }
 
+//hys 关键词筛选
+bool SAIAssistantWindow::ShouldEnableTools(const FString& UserInput) const
+{
+    if (UserInput.IsEmpty()) return false;
+
+    FString Lower = UserInput.ToLower();
+
+    // 操作意图关键词（可根据你的插件常用场景增减）
+    static const TArray<FString> OperationKeywords = {
+        TEXT("生成"), TEXT("创建"), TEXT("建"), TEXT("加"), TEXT("新增"),
+        TEXT("修改"), TEXT("改"), TEXT("设置"), TEXT("调"), TEXT("改变"),
+        TEXT("移动"), TEXT("移到"), TEXT("挪"), TEXT("定位"),
+        TEXT("旋转"), TEXT("转"), TEXT("朝向"),
+        TEXT("缩放"), TEXT("放大"), TEXT("缩小"),
+        TEXT("隐藏"), TEXT("显示"), TEXT("可见"),
+        TEXT("删除"), TEXT("移除"), TEXT("删"),
+        TEXT("批量"), TEXT("batch"), TEXT("所有"),
+        TEXT("灯光"), TEXT("light"), TEXT("亮度"), TEXT("颜色"),
+        TEXT("选择"), TEXT("选中"), TEXT("聚焦"), TEXT("focus"),
+        TEXT("重命名"), TEXT("rename"), TEXT("标签"), TEXT("tag"),
+        TEXT("对齐"), TEXT("分布"), TEXT("保存"), TEXT("执行")
+    };
+
+    for (const FString& Keyword : OperationKeywords)
+    {
+        if (Lower.Contains(Keyword))
+        {
+            return true;
+        }
+    }
+    
+    // 默认：纯聊天不启用工具
+    return false;
+}
 // 新增：实现文本回车提交与内容变化处理
 void SAIAssistantWindow::OnTextCommitted(const FText& InText, ETextCommit::Type CommitMethod)
 {
@@ -872,13 +925,66 @@ FReply SAIAssistantWindow::OnSettingsClicked()
 
 FReply SAIAssistantWindow::OnDocumentationClicked()
 {
-    AddMessageToChat(TEXT("AI: 文档功能正在开发中，敬请期待。"), false);
+
+    // 文档的 URL
+    FString URL = TEXT("https://github.com/jd-cg/xAssistant");
+
+    // 创建 WebBrowser 控件
+    TSharedPtr<SWebBrowser> WebBrowserWidget = SNew(SWebBrowser)
+        .InitialURL(URL)
+        .SupportsTransparency(true)
+        .ShowControls(false) ; // 显示地址栏、刷新等按钮
+
+
+    // 创建一个新窗口显示浏览器
+    TSharedRef<SWindow> WebWindow = SNew(SWindow)
+        .Title(LOCTEXT("WebWindowTitle", "说明文档")) // 使用 LOCTEXT 包装
+        .ClientSize(FVector2D(1280, 800))
+        .ScreenPosition(FVector2D(200, 200))
+        .SupportsMaximize(true)
+        .SupportsMinimize(true);
+
+
+
+    WebWindow->SetContent(WebBrowserWidget.ToSharedRef());
+
+    // 打开窗口
+    FSlateApplication::Get().AddWindow(WebWindow);
+
+    AddMessageToChat(TEXT("AI: 已为您打开内置文档"), false);
+
     return FReply::Handled();
 }
 
 FReply SAIAssistantWindow::OnFeedbackClicked()
 {
-    AddMessageToChat(TEXT("AI: 反馈通道正在建设中，敬请期待。"), false);
+
+    // 反馈通道的 URL
+    FString URL = TEXT("http://www.jd-cg.com/");
+
+    // 创建 WebBrowser 控件
+    TSharedPtr<SWebBrowser> WebBrowserWidget = SNew(SWebBrowser)
+        .InitialURL(URL)
+        .SupportsTransparency(true)
+        .ShowControls(false) ; // 显示地址栏、刷新等按钮
+
+
+    // 创建一个新窗口显示浏览器
+    TSharedRef<SWindow> WebWindow = SNew(SWindow)
+        .Title(LOCTEXT("WebWindowTitle", "反馈通道")) // 使用 LOCTEXT 包装
+        .ClientSize(FVector2D(1280, 800))
+        .ScreenPosition(FVector2D(200, 200))
+        .SupportsMaximize(true)
+        .SupportsMinimize(true);
+
+
+
+    WebWindow->SetContent(WebBrowserWidget.ToSharedRef());
+
+    // 打开窗口
+    FSlateApplication::Get().AddWindow(WebWindow);
+
+    AddMessageToChat(TEXT("AI: 已为您打开反馈通道"), false);
     return FReply::Handled();
 }
 
@@ -887,11 +993,25 @@ FReply SAIAssistantWindow::OnAttachFileClicked()
     AddMessageToChat(TEXT("AI: 附件功能正在开发中。"), false);
     return FReply::Handled();
 }
-
+//hys,执行虚幻内置高分辨率截图命令
 FReply SAIAssistantWindow::OnScreenshotClicked()
 {
-    AddMessageToChat(TEXT("AI: 截图功能正在开发中。"), false);
+    // 先给反馈（
+    AddMessageToChat(TEXT("AI: 正在生成高分辨率截图..."), false);
+    // 4 表示 4 倍分辨率（视口 1080p → 输出约 4K），可改成 2、8、16 等
+    FString Command = TEXT("HighResShot 4");
+    if (GEditor)
+    {
+        GEditor->Exec(GEditor->GetEditorWorldContext().World(), *Command);
+    
+    }
+    else
+    {
+        AddMessageToChat(TEXT("AI: 截图失败，编辑器环境异常"), false);
+    }
+
     return FReply::Handled();
+
 }
 
 FReply SAIAssistantWindow::OnCodeBlockClicked()

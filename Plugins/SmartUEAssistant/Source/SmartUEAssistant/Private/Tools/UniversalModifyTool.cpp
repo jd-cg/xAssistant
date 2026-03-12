@@ -120,6 +120,7 @@ FString FUniversalModifyTool::FindPropertyPath(UObject* Object, const FString& P
 
 bool FUniversalModifyTool::ModifyActorProperty(AActor* Actor, const FString& PropertyPath, const TSharedPtr<FJsonValue>& Value, FString& OutError)
 {
+	
 	// For light-specific properties, use direct API (more reliable)
 	if (Actor->IsA(ALight::StaticClass()))
 	{
@@ -201,7 +202,7 @@ FAIToolResult FUniversalModifyTool::Execute(const TSharedPtr<FJsonObject>& Args)
 	if (TargetActors.Num() == 0)
 	{
 		UE_LOG(LogSmartUEAssistantTools, Error, TEXT("ERROR: No actors found for target: %s"), *Target);
-		return {false, FString::Printf(TEXT("No actors found for target: %s"), *Target), nullptr};
+		return {false, FString::Printf(TEXT("未找到目标对象: %s"), *Target), nullptr};
 	}
 
 	UE_LOG(LogSmartUEAssistantTools, Log, TEXT("Found %d target actors"), TargetActors.Num());
@@ -246,10 +247,10 @@ FAIToolResult FUniversalModifyTool::Execute(const TSharedPtr<FJsonObject>& Args)
 	// Step 4: Return result
 	if (SuccessCount > 0)
 	{
-		FString Message = FString::Printf(TEXT("Successfully modified %d actors"), SuccessCount);
+		FString Message = FString::Printf(TEXT("成功修改 %d 个对象"), SuccessCount);
 		if (Errors.Num() > 0)
 		{
-			Message += FString::Printf(TEXT(" (%d errors)"), Errors.Num());
+			Message += FString::Printf(TEXT(" (%d 错误)"), Errors.Num());
 		}
 		
 		UE_LOG(LogSmartUEAssistantTools, Log, TEXT("╔════════════════════════════════════════════════"));
@@ -260,7 +261,7 @@ FAIToolResult FUniversalModifyTool::Execute(const TSharedPtr<FJsonObject>& Args)
 	}
 	else
 	{
-		FString Message = FString::Printf(TEXT("Failed to modify actors. Errors: %s"), 
+		FString Message = FString::Printf(TEXT("未能修改对象参与者。错误: %s"), 
 			*FString::Join(Errors, TEXT("; ")));
 		UE_LOG(LogSmartUEAssistantTools, Error, TEXT("╔════════════════════════════════════════════════"));
 		UE_LOG(LogSmartUEAssistantTools, Error, TEXT("║ RESULT: FAILED"));
@@ -271,7 +272,7 @@ FAIToolResult FUniversalModifyTool::Execute(const TSharedPtr<FJsonObject>& Args)
 }
 
 
-// �?自动注册工具
+// �?自动注册工具
 #include "ToolAutoRegister.h"
 
 REGISTER_EDITOR_TOOL(FUniversalModifyTool)

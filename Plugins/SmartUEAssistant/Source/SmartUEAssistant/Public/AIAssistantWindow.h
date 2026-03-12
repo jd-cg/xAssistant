@@ -73,6 +73,9 @@ private:
 	FReply OnSendClicked();               // 新增：发送按钮点击
 	FReply OnCancelClicked();             // 新增：取消按钮点击
 
+	//hys 关键词验证
+	bool ShouldEnableTools(const FString& UserInput) const;
+	
 	// 新增：输入框回调与发送按钮点击
 	void OnTextCommitted(const FText& InText, ETextCommit::Type CommitMethod);
 	void OnTextChanged(const FText& InText);

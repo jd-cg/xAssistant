@@ -140,7 +140,7 @@ FAIToolResult FBatchSetVisibilityTool::Execute(const TSharedPtr<FJsonObject>& Ar
 		{
 			Actor->SetActorHiddenInGame(!bVisible);
 			Actor->SetIsTemporarilyHiddenInEditor(!bVisible);
-			
+			Actor->bHiddenEd=!bVisible;
 			if (bApplyToChildren)
 			{
 				TArray<AActor*> ChildActors;
@@ -149,6 +149,7 @@ FAIToolResult FBatchSetVisibilityTool::Execute(const TSharedPtr<FJsonObject>& Ar
 				{
 					ChildActor->SetActorHiddenInGame(!bVisible);
 					ChildActor->SetIsTemporarilyHiddenInEditor(!bVisible);
+					ChildActor->bHiddenEd=!bVisible;
 				}
 				ModifiedCount += ChildActors.Num();
 			}
@@ -156,8 +157,8 @@ FAIToolResult FBatchSetVisibilityTool::Execute(const TSharedPtr<FJsonObject>& Ar
 		}
 	}
 
-	FString Message = FString::Printf(TEXT("Set visibility for %d actors to %s"), 
-		ModifiedCount, bVisible ? TEXT("Visible") : TEXT("Hidden"));
+	FString Message = FString::Printf(TEXT("将 %d 个对象的可见性设置为 %s"), 
+		ModifiedCount, bVisible ? TEXT("可见") : TEXT("隐藏"));
 	UE_LOG(LogSmartUEAssistantTools, Log, TEXT("%s"), *Message);
 	
 	return {true, Message, nullptr};
@@ -205,7 +206,7 @@ FAIToolResult FBatchSetMobilityTool::Execute(const TSharedPtr<FJsonObject>& Args
 	}
 	else
 	{
-		return {false, FString::Printf(TEXT("Invalid mobility type: %s. Use Static, Stationary, or Movable"), *MobilityStr), nullptr};
+		return {false, FString::Printf(TEXT("无效的移动类型: %s. 请使用静态、固定或可移动类型的对象"), *MobilityStr), nullptr};
 	}
 
 	int32 ModifiedCount = 0;
@@ -222,7 +223,7 @@ FAIToolResult FBatchSetMobilityTool::Execute(const TSharedPtr<FJsonObject>& Args
 		}
 	}
 
-	FString Message = FString::Printf(TEXT("Set mobility to %s for %d actors"), *MobilityStr, ModifiedCount);
+	FString Message = FString::Printf(TEXT("为 %s 名参与者将移动性设置为 %d "), *MobilityStr, ModifiedCount);
 	UE_LOG(LogSmartUEAssistantTools, Log, TEXT("%s"), *Message);
 	
 	return {true, Message, nullptr};
@@ -291,7 +292,7 @@ FAIToolResult FBatchMoveToLevelTool::Execute(const TSharedPtr<FJsonObject>& Args
 		UEditorLevelUtils::MoveActorsToLevel(ActorsToMove, TargetLevel);
 	}
 
-	FString Message = FString::Printf(TEXT("Moved %d actors to level: %s"), ActorsToMove.Num(), *LevelName);
+	FString Message = FString::Printf(TEXT("移动 %d 个对象到关卡: %s"), ActorsToMove.Num(), *LevelName);
 	UE_LOG(LogSmartUEAssistantTools, Log, TEXT("%s"), *Message);
 	
 	return {true, Message, nullptr};
@@ -363,13 +364,13 @@ FAIToolResult FBatchSetTagsTool::Execute(const TSharedPtr<FJsonObject>& Args)
 			}
 			else
 			{
-				return {false, FString::Printf(TEXT("Invalid mode: %s. Use Set, Add, or Remove"), *Mode), nullptr};
+				return {false, FString::Printf(TEXT("无效模式: %s. 请使用“设置”、“添加”或“删除”"), *Mode), nullptr};
 			}
 			ModifiedCount++;
 		}
 	}
 
-	FString Message = FString::Printf(TEXT("%s tags for %d actors"), *Mode, ModifiedCount);
+	FString Message = FString::Printf(TEXT("%s 个标签的 %d 个对象"), *Mode, ModifiedCount);
 	UE_LOG(LogSmartUEAssistantTools, Log, TEXT("%s"), *Message);
 	
 	return {true, Message, nullptr};
@@ -541,10 +542,10 @@ FAIToolResult FDistributeActorsTool::Execute(const TSharedPtr<FJsonObject>& Args
 	}
 	else
 	{
-		return {false, FString::Printf(TEXT("Invalid pattern: %s. Use Line, Grid, Circle, or Random"), *Pattern), nullptr};
+		return {false, FString::Printf(TEXT("无效模式: %s. 请使用直线、网格、圆或随机"), *Pattern), nullptr};
 	}
 
-	FString Message = FString::Printf(TEXT("Distributed %d actors in %s pattern"), ActorsArray.Num(), *Pattern);
+	FString Message = FString::Printf(TEXT("已经分布 %d 个对象进行 %s 模式分布"), ActorsArray.Num(), *Pattern);
 	UE_LOG(LogSmartUEAssistantTools, Log, TEXT("%s"), *Message);
 	
 	return {true, Message, nullptr};

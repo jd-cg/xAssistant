@@ -15,6 +15,9 @@
 class FSmartUEAssistantStyle
 {
 public:
+
+    static const FName NAME_ToolbarIcon;// hys新增工具栏图标名称
+    
     static TSharedRef<class FSlateStyleSet> Create();
     static void Initialize();
     static void Shutdown();

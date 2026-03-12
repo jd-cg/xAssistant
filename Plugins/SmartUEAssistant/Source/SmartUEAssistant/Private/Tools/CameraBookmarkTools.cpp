@@ -177,7 +177,7 @@ FAIToolResult FJumpToCameraBookmarkTool::Execute(const TSharedPtr<FJsonObject>& 
 	ViewportClient->SetViewLocation(Location);
 	ViewportClient->SetViewRotation(Rotation);
 
-	FString Message = FString::Printf(TEXT("Jumped to camera bookmark: %s"), *Name);
+	FString Message = FString::Printf(TEXT("跳转到相机书签: %s"), *Name);
 	UE_LOG(LogSmartUEAssistantTools, Log, TEXT("%s"), *Message);
 	
 	return {true, Message, nullptr};

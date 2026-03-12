@@ -18,6 +18,7 @@ public class SmartUEAssistant : ModuleRules
 				"SlateCore",
 				"ToolWidgets",
 				"EditorWidgets",
+				"WebBrowser", 
 				"HTTP",
 				"Json",
 				"JsonUtilities"
@@ -35,6 +36,7 @@ public class SmartUEAssistant : ModuleRules
 					"ToolMenus",
 					"Projects",
 					"LevelEditor",
+					"WebBrowserWidget",
 					"Settings" // 新增：用于注册项目设置页
 				}
 			);

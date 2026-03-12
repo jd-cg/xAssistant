@@ -10,8 +10,14 @@
 #include "HAL/PlatformFilemanager.h"
 #include "Styling/AppStyle.h"          // 新增：AppStyle 父样式
 #include "Styling/StyleColors.h"       // 新增：系统色表
+#include "Styling/SlateStyleMacros.h"
 
+
+#define RootToContentDir Style->RootToContentDir
 TSharedPtr<FSlateStyleSet> FSmartUEAssistantStyle::StyleInstance = nullptr;
+
+//hys初始化向量
+const FName FSmartUEAssistantStyle::NAME_ToolbarIcon(TEXT("SmartUEAssistant.OpenCommandPanel"));
 
 // 样式名称常量定义
 const FName FSmartUEAssistantStyle::NAME_UserMessageBubble(TEXT("SmartUEAssistant.UserMessageBubble"));
@@ -57,6 +63,8 @@ TSharedRef<FSlateStyleSet> FSmartUEAssistantStyle::Create()
         Style->SetContentRoot(Plugin->GetBaseDir() / TEXT("Resources"));
     }
 
+    const FVector2D Icon20x20(20.0f, 20.0f);
+    
     // 创建圆角气泡画刷（使用系统色）
     {
         // 用户消息气泡使用更柔和的蓝色（在深色主题下更易读）
@@ -121,6 +129,9 @@ TSharedRef<FSlateStyleSet> FSmartUEAssistantStyle::Create()
 
     // SVG 图标资源（占位，沿用白色，保证在深色背景可见）
     {
+        // hys 绑定工具栏按钮图标 
+        Style->Set(NAME_ToolbarIcon, new IMAGE_BRUSH(RootToContentDir(TEXT("PlaceholderButtonIcon")), Icon20x20));
+        
         Style->Set(NAME_RobotIcon, new FSlateColorBrush(FLinearColor::White));
         Style->Set(NAME_SettingsIcon, new FSlateColorBrush(FLinearColor::White));
         Style->Set(NAME_DocumentIcon, new FSlateColorBrush(FLinearColor::White));

@@ -5,7 +5,6 @@
 [![版本](https://img.shields.io/badge/版本-1.0.8-blue.svg)](https://github.com/jd-cg/xAssistant)
 [![UE版本](https://img.shields.io/badge/UE-5.0+-orange.svg)](https://www.unrealengine.com)
 [![协议](https://img.shields.io/badge/协议-Apache--2.0-green.svg)](LICENSE)
-
 ---
 
 ## ✨ 功能特性
@@ -29,19 +28,28 @@
 
 ### 配置API密钥
 
-编辑 `Config/DefaultSmartUEAssistant.ini`：
+> **安全提示**: 配置文件 `Plugins/SmartUEAssistant/Config/DefaultSmartUEAssistant.ini` 和 `Config/DefaultSmartUEAssistant.ini` 已加入 `.gitignore`，**不会**被提交到版本库，请勿将含有真实密钥的文件手动添加到 git。
 
-```ini
-[/Script/SmartUEAssistant.SmartUEAssistantSettings]
-APIKey=your-api-key-here
-BaseURL=https://api.openai.com
-ModelName=gpt-4
-```
+1. 复制示例模板：
+
+   ```text
+   Plugins/SmartUEAssistant/Config/DefaultSmartUEAssistant.ini.example
+   → Plugins/SmartUEAssistant/Config/DefaultSmartUEAssistant.ini
+   ```
+
+2. 填写您的 API 密钥：
+
+   ```ini
+   [/Script/SmartUEAssistant.SmartUEAssistantSettings]
+   APIKey=your-api-key-here
+   BaseURL=https://api.deepseek.com/v1
+   SupportedModels=deepseek-chat
+   ```
 
 #### 获取API密钥
 
-- **OpenAI**: https://platform.openai.com/api-keys
-- **DeepSeek**: https://platform.deepseek.com/api_keys
+- **OpenAI**: [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
+- **DeepSeek**: [platform.deepseek.com/api_keys](https://platform.deepseek.com/api_keys)
 
 ### 使用方法
 
@@ -103,6 +111,7 @@ AI: ✅ 自动识别 → Intensity 属性 → 调整数值 → 实时显示
 | jump_to_camera_bookmark | 跳转到已保存视角 |
 | list_camera_bookmarks   | 列出所有书签     |
 
+演示视频:https://pan.baidu.com/s/18iD-KYJevhXpjvWzB0NZJQ?pwd=w66x
 ---
 
 ## 🏗️ 架构设计
@@ -214,8 +223,14 @@ SupportedModels=deepseek-chat
 
 ## 📝 版本历史
 
-### v1.0.8 (2026-02-28) - 最新版本
+### v1.0.9 (2026-03-12) - 最新版本
 
+- ✅ 降低对话成本，提升响应时间
+- ✅ 区分用户意图将对话划分成操作对话和询问对话
+- ✅ 优化功能实现工具支持模糊命名
+- ✅ 添加内部文档跳转和快捷工具
+
+### v1.0.8 (2026-02-28) 
 - ✅ AI输出文本可选择和复制
 - ✅ 流式显示支持文本选择
 - ✅ 优化UI控件和用户体验
@@ -299,6 +314,7 @@ xAssistant/
 │       │           ├── Tools/         # 工具接口
 │       │           ├── AIService.h
 │       │           └── ...
+│       ├── Resources                  # 插件资源
 │       ├── Config/                    # 插件配置
 │       └── doc/
 │           └── architecture.svg       # 架构图
@@ -375,7 +391,7 @@ Apache License 2.0 - 详见 [LICENSE](LICENSE) 文件
 - **项目仓库**: https://github.com/jd-cg/xAssistant
 - **架构图**: [Plugins/SmartUEAssistant/doc/architecture.svg](Plugins/SmartUEAssistant/doc/architecture.svg)
 - **打包脚本**: [Scripts/PackSmartUEAssistantPlugin.ps1](Scripts/PackSmartUEAssistantPlugin.ps1)
-
+- **演示视频**: https://pan.baidu.com/s/18iD-KYJevhXpjvWzB0NZJQ?pwd=w66x
 ---
 
 <p align="center">

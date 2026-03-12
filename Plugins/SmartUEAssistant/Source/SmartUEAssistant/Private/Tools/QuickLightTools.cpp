@@ -148,7 +148,7 @@ FAIToolResult FQuickSetLightColorTool::Execute(const TSharedPtr<FJsonObject>& Ar
 		UE_LOG(LogSmartUEAssistantTools, Log, TEXT("✓ Viewports refreshed"));
 	}
 
-	FString Message = FString::Printf(TEXT("Successfully set color for %d lights"), ModifiedCount);
+	FString Message = FString::Printf(TEXT("已经成功设置 %d 个光源对象的颜色"), ModifiedCount);
 	UE_LOG(LogSmartUEAssistantTools, Log, TEXT("╔═══════════════════════════════════════════"));
 	UE_LOG(LogSmartUEAssistantTools, Log, TEXT("║ RESULT: SUCCESS"));
 	UE_LOG(LogSmartUEAssistantTools, Log, TEXT("║ %s"), *Message);
@@ -261,7 +261,7 @@ FAIToolResult FQuickSetLightIntensityTool::Execute(const TSharedPtr<FJsonObject>
 }
 
 
-// �?自动注册工具
+// �?自动注册工具
 #include "ToolAutoRegister.h"
 
 REGISTER_EDITOR_TOOL(FQuickSetLightColorTool)

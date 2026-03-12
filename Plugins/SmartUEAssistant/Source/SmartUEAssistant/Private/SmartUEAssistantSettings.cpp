@@ -5,7 +5,7 @@ USmartUEAssistantSettings::USmartUEAssistantSettings()
 {
 	// 设置默认值
 	APIEndpoint = TEXT("https://api.openai.com/v1/chat/completions");
-	APIKey = TEXT("your-api-key-here");
+	APIKey = TEXT("sk-a49098a1905344b5bac282d234a953cd");
 	SupportedModels = TEXT("gpt-3.5-turbo,gpt-4");
 	RequestTimeout = 30;
 	MaxTokens = 1000;

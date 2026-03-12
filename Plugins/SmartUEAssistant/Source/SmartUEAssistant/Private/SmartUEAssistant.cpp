@@ -126,13 +126,21 @@ void FSmartUEAssistantModule::RegisterMenus()
 	// 注册到编辑器工具菜单
 	FToolMenuOwnerScoped OwnerScoped(this);
 	{
-		UToolMenu* Menu = UToolMenus::Get()->ExtendMenu("LevelEditor.MainMenu.Window");
+	    //hys
+		//UToolMenu* Menu = UToolMenus::Get()->ExtendMenu("LevelEditor.MainMenu.Window");
+	    UToolMenu* ToolbarMenu = UToolMenus::Get()->ExtendMenu("LevelEditor.LevelEditorToolBar.PlayToolBar");
 		{
-			FToolMenuSection& Section = Menu->FindOrAddSection("WindowLayout");
-			// 基于命令的菜单项，自动显示快捷键
-			Section.AddEntry(
-				FToolMenuEntry::InitMenuEntry(FSmartUEAssistantCommands::Get().OpenCommandPanel)
-			);
+	        //hys
+	    	// 基于命令的菜单项，自动显示快捷键
+			//FToolMenuSection& Section = Menu->FindOrAddSection("WindowLayout");
+	        //Section.AddEntry(FToolMenuEntry::InitMenuEntry(FSmartUEAssistantCommands::Get().OpenCommandPanel));
+	        FToolMenuSection& Section = ToolbarMenu->FindOrAddSection("PluginOperations");
+			
+	        //hys
+	        FToolMenuEntry Entry = FToolMenuEntry::InitToolBarButton(FSmartUEAssistantCommands::Get().OpenCommandPanel);
+	        Entry.Label = LOCTEXT("Toolbar_Label", "AI助手");
+	        Entry.ToolTip = LOCTEXT("Toolbar_Tooltip", "打开 AI 辅助面板");
+	        Section.AddEntry(Entry);
 		}
 	}
 }

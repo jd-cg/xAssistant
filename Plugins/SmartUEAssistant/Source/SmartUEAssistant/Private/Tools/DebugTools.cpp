@@ -44,7 +44,7 @@ FAIToolResult FDebugSetLightColorTool::Execute(const TSharedPtr<FJsonObject>& Ar
 	}
 
 	FString ColorName = Args->GetStringField(TEXT("Color")).ToLower();
-	UE_LOG(LogSmartUEAssistantTools, Warning, TEXT("[DEBUG] Color requested: %s"), *ColorName);
+	UE_LOG(LogSmartUEAssistantTools, Warning, TEXT("[DEBUG] 要求颜色: %s"), *ColorName);
 
 	FLinearColor TargetColor = FLinearColor::Red;
 	if (ColorName == TEXT("red") || ColorName.Contains(TEXT("红")))
@@ -68,7 +68,7 @@ FAIToolResult FDebugSetLightColorTool::Execute(const TSharedPtr<FJsonObject>& Ar
 		TargetColor = FLinearColor::Yellow;
 	}
 
-	UE_LOG(LogSmartUEAssistantTools, Warning, TEXT("[DEBUG] Target color: R=%f G=%f B=%f"), 
+	UE_LOG(LogSmartUEAssistantTools, Warning, TEXT("[DEBUG] 目标颜色: R=%f G=%f B=%f"), 
 		TargetColor.R, TargetColor.G, TargetColor.B);
 
 	int32 ModifiedCount = 0;
@@ -85,27 +85,27 @@ FAIToolResult FDebugSetLightColorTool::Execute(const TSharedPtr<FJsonObject>& Ar
 		// Check if it's a light actor
 		if (Actor->IsA(ALight::StaticClass()))
 		{
-			UE_LOG(LogSmartUEAssistantTools, Warning, TEXT("[DEBUG] Found light actor: %s"), *Actor->GetName());
+			UE_LOG(LogSmartUEAssistantTools, Warning, TEXT("[DEBUG] 找到光源对象: %s"), *Actor->GetName());
 			
 			// Try to get light component
 			ULightComponent* LightComp = Actor->FindComponentByClass<ULightComponent>();
 			if (LightComp)
 			{
-				UE_LOG(LogSmartUEAssistantTools, Warning, TEXT("[DEBUG] Found LightComponent, setting color..."));
+				UE_LOG(LogSmartUEAssistantTools, Warning, TEXT("[DEBUG] 找到光源组件，设置颜色..."));
 				LightComp->SetLightColor(TargetColor);
 				LightComp->MarkRenderStateDirty();
 				ModifiedCount++;
-				UE_LOG(LogSmartUEAssistantTools, Warning, TEXT("[DEBUG] Color SET! Current color: R=%f G=%f B=%f"),
+				UE_LOG(LogSmartUEAssistantTools, Warning, TEXT("[DEBUG] 颜色设置！当前颜色: R=%f G=%f B=%f"),
 					LightComp->GetLightColor().R, LightComp->GetLightColor().G, LightComp->GetLightColor().B);
 			}
 			else
 			{
-				UE_LOG(LogSmartUEAssistantTools, Error, TEXT("[DEBUG] Light actor found but NO LightComponent!"));
+				UE_LOG(LogSmartUEAssistantTools, Error, TEXT("[DEBUG] 找到光源对象，但没有光源组件！"));
 			}
 		}
 	}
 
-	FString Message = FString::Printf(TEXT("[DEBUG] Modified %d lights to %s color"), ModifiedCount, *ColorName);
+	FString Message = FString::Printf(TEXT("[DEBUG] 将 %d 盏灯光修改为 %s 颜色"), ModifiedCount, *ColorName);
 	UE_LOG(LogSmartUEAssistantTools, Warning, TEXT("%s"), *Message);
 	
 	return {true, Message, nullptr};
@@ -166,14 +166,14 @@ FAIToolResult FDebugListLightsTool::Execute(const TSharedPtr<FJsonObject>& Args)
 		}
 		else
 		{
-			FString Info = FString::Printf(TEXT("%s (%s, %s): NO LIGHT COMPONENT!"),
+			FString Info = FString::Printf(TEXT("%s (%s, %s): 没有光源组件！"),
 				*ActorLabel, *ActorName, *ActorClass);
 			LightInfo.Add(Info);
 			UE_LOG(LogSmartUEAssistantTools, Error, TEXT("[DEBUG] %s"), *Info);
 		}
 	}
 
-	FString Message = FString::Printf(TEXT("[DEBUG] Found %d lights:\n%s"), 
+	FString Message = FString::Printf(TEXT("[DEBUG] 找到 %d 个光源:\n%s"), 
 		LightCount, *FString::Join(LightInfo, TEXT("\n")));
 	
 	TSharedPtr<FJsonObject> ResultData = MakeShareable(new FJsonObject);
@@ -231,7 +231,7 @@ FAIToolResult FDebugShowPropertiesTool::Execute(const TSharedPtr<FJsonObject>& A
 		TArray<UActorComponent*> Components;
 		Actor->GetComponents(UActorComponent::StaticClass(), Components);
 		
-		ActorInfoList.Add(FString::Printf(TEXT("Components: %d"), Components.Num()));
+		ActorInfoList.Add(FString::Printf(TEXT("组件: %d"), Components.Num()));
 		
 		for (UActorComponent* Component : Components)
 		{
@@ -246,7 +246,7 @@ FAIToolResult FDebugShowPropertiesTool::Execute(const TSharedPtr<FJsonObject>& A
 				if (ULightComponent* LC = Cast<ULightComponent>(Component))
 				{
 					FLinearColor Color = LC->GetLightColor();
-					FString LightInfo = FString::Printf(TEXT("    Color: (%.2f, %.2f, %.2f), Intensity: %.0f"),
+					FString LightInfo = FString::Printf(TEXT("    颜色: (%.2f, %.2f, %.2f), 强度: %.0f"),
 						Color.R, Color.G, Color.B, LC->Intensity);
 					ActorInfoList.Add(LightInfo);
 					UE_LOG(LogSmartUEAssistantTools, Warning, TEXT("[DEBUG] %s"), *LightInfo);

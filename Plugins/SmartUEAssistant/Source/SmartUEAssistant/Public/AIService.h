@@ -117,6 +117,9 @@ public:
 	void ClearConversationMemory();
 
 private:
+
+	bool bHasSentFullToolsSchema = false;  //hys 是否已发送过完整 tools schema
+	
 	/** 私有构造函数（单例模式）/ Private constructor for singleton pattern */
 	FAIService();
 

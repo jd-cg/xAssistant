@@ -1,5 +1,4 @@
 #include "Tools/ActorTools.h"
-
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/Actor.h"
@@ -10,37 +9,62 @@
 #include "Editor/UnrealEdEngine.h"
 #include "UnrealEdGlobals.h"
 #include "ScopedTransaction.h"
+#include "SmartUEAssistantLog.h"
 #include "Engine/Selection.h"
 #include "Engine/PointLight.h"
 #include "Engine/DirectionalLight.h"
 #include "Engine/StaticMeshActor.h"
 #include "Tools/SUEAEditorHelpers.h"
-
-
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
+#include "Subsystems/EditorActorSubsystem.h"
 static AActor* FindActorByNameFuzzy(UWorld* World, const FString& Query, bool bExact)
 {
-    if (!World) return nullptr;
+    if (!World || Query.IsEmpty()) 
+    {
+        return nullptr;
+    }
+    FString LowerQuery = Query.ToLower().TrimStartAndEnd();
+    int32 Checked = 0;
+    AActor* FirstMatch = nullptr;
+
     for (TActorIterator<AActor> It(World); It; ++It)
     {
+        Checked++;
         AActor* Actor = *It;
-        const FString Name = Actor->GetName();
+        FString ActorName = Actor->GetName().ToLower();
+        FString ActorLabel = Actor->GetActorLabel().ToLower();
+
+        // 打印每个 Actor（调试用，）
+        // UE_LOG(LogSmartUEAssistantAI, Verbose, TEXT("  [%d] Name='%s' | Label='%s'"), Checked, *ActorName, *ActorLabel);
+
+        bool bMatched = false;
+
         if (bExact)
         {
-            if (Name.Equals(Query, ESearchCase::IgnoreCase))
+            if (ActorLabel == LowerQuery || ActorName == LowerQuery)
             {
-                return Actor;
+                bMatched = true;
             }
         }
         else
         {
-            if (Name.Contains(Query, ESearchCase::IgnoreCase))
+            // hys 模糊匹配
+            if (ActorLabel.Contains(LowerQuery) || ActorName.Contains(LowerQuery))
             {
-                return Actor;
+                bMatched = true;
             }
+        }
+
+        if (bMatched)
+        {
+            if (!FirstMatch) FirstMatch = Actor;  // 返回第一个匹配的
+            return Actor;
         }
     }
     return nullptr;
 }
+
 
 // ---------------- FSelectAndFocusActorTool ----------------
 FSelectAndFocusActorTool::FSelectAndFocusActorTool()
@@ -114,7 +138,24 @@ FAIToolResult FSetActorTransformTool::Execute(const TSharedPtr<FJsonObject>& Arg
     if (!World) return {false, TEXT("未获取到编辑器世界"), nullptr};
 
     const FString Name = Args->GetStringField(TEXT("name"));
-    AActor* Target = FindActorByNameFuzzy(World, Name, /*bExact*/true);
+    AActor* Target = FindActorByNameFuzzy(World, Name, /*bExact*/false);
+    if (!Target)
+    {
+        // 如果找不到，尝试去掉后缀再找一次（针对 BP_Actor_C 这种类名干扰）
+        FString CleanName = Name.Replace(TEXT("_C"), TEXT(""));
+        Target = FindActorByNameFuzzy(World, CleanName, false);
+    }
+
+    // 2. 找不到时打印当前场景前 3 个 Actor 的 Label 到日志，方便你调试
+    if (!Target)
+    {
+        UE_LOG(LogSmartUEAssistantAI, Warning, TEXT("找不到 Actor: %s. 正在扫描场景..."), *Name);
+        int32 Count = 0;
+        for (TActorIterator<AActor> It(World); It && Count < 3; ++It, ++Count)
+        {
+            UE_LOG(LogSmartUEAssistantAI, Log, TEXT("场景中有: %s"), *It->GetActorLabel());
+        }
+    }
     if (!Target) return {false, FString::Printf(TEXT("未找到Actor：%s"), *Name), nullptr};
 
     const FScopedTransaction Tx(NSLOCTEXT("SmartUE", "SetActorTransformTx", "AI: Set Actor Transform"));
@@ -166,68 +207,268 @@ FAIToolResult FSetActorTransformTool::Execute(const TSharedPtr<FJsonObject>& Arg
     return {true, TEXT("已更新Actor变换"), Data};
 }
 
-// ---------------- FCreateActorBasicTool ----------------
+// ---------------- FCreateActorBasicTool (升级版) ----------------
 FCreateActorBasicTool::FCreateActorBasicTool()
 {
     Spec.Name = TEXT("create_actor_basic");
-    Spec.Description = TEXT("创建基础Actor：EmptyActor、PointLight、DirectionalLight、StaticMeshActor(默认引擎立方体)等");
+    Spec.Description = TEXT("创建任意 Actor，支持内置类型、自定义类名、批量创建、复制现有对象。");
+
     Spec.Params = {
-        {TEXT("type"), TEXT("string"), false, TEXT("empty | point_light | directional_light | cube")},
-        {TEXT("name"), TEXT("string"), true, TEXT("可选自定义名称")},
-        {TEXT("location"), TEXT("object"), true, TEXT("{x,y,z} 初始位置，可选")}
+        // 核心参数
+        {TEXT("type"), TEXT("string"), true, TEXT("内置类型（empty/point_light/directional_light/cube/sphere/cylinder/plane）或完整类名（如 BP_MyActor_C）")},
+        {TEXT("count"), TEXT("number"), true, TEXT("创建数量，默认 1")},
+        {TEXT("name_prefix"), TEXT("string"), true, TEXT("名称前缀，批量时自动加编号，默认空")},
+        {TEXT("location"), TEXT("object"), true, TEXT("单个位置 {x,y,z}，所有对象共用")},
+        {TEXT("locations"), TEXT("array"), true, TEXT("位置数组 [{x,y,z}, ...]，优先级高于 location")},
+
+        // 复制功能
+        {TEXT("copy_from"), TEXT("string"), true, TEXT("要复制的现有 Actor 名称/Label，支持模糊匹配")},
+        {TEXT("copy_count"), TEXT("number"), true, TEXT("复制数量，默认 1，与 count 互斥")},
+
+        // 可选高级参数
+        {TEXT("rotation"), TEXT("object"), true, TEXT("旋转 {pitch,yaw,roll}")},
+        {TEXT("scale"), TEXT("object"), true, TEXT("缩放 {x,y,z}")},
+        {TEXT("attach_to"), TEXT("string"), true, TEXT("附加到现有 Actor 的名称")},
     };
+
     Spec.Permission = EToolPermission::Modify;
 }
 
 FAIToolResult FCreateActorBasicTool::Execute(const TSharedPtr<FJsonObject>& Args)
 {
-    if (!Args.IsValid() || !Args->HasTypedField<EJson::String>(TEXT("type")))
-        return {false, TEXT("缺少参数：type"), nullptr};
+    UE_LOG(LogSmartUEAssistantAI, Log, TEXT("【create_actor_basic 执行开始】"));
 
     UWorld* World = SUEA::GetEditorWorld();
     if (!World) return {false, TEXT("未获取到编辑器世界"), nullptr};
 
-    const FString Type = Args->GetStringField(TEXT("type"));
-    const FString CustomName = Args->HasTypedField<EJson::String>(TEXT("name")) ? Args->GetStringField(TEXT("name")) : TEXT("");
+    // ──────────────────────── 参数解析 ────────────────────────
+    FString TypeStr = Args->HasField(TEXT("type")) ? Args->GetStringField(TEXT("type")).TrimStartAndEnd() : TEXT("");
+    int32 Count = Args->HasField(TEXT("count")) ? FMath::Max(1, (int32)Args->GetNumberField(TEXT("count"))) : 1;
+    FString NamePrefix = Args->HasField(TEXT("name_prefix")) ? Args->GetStringField(TEXT("name_prefix")).TrimStartAndEnd() : TEXT("");
+    FString CopyFrom = Args->HasField(TEXT("copy_from")) ? Args->GetStringField(TEXT("copy_from")).TrimStartAndEnd() : TEXT("");
+    int32 CopyCount = Args->HasField(TEXT("copy_count")) ? FMath::Max(1, (int32)Args->GetNumberField(TEXT("copy_count"))) : 0;
 
-    FActorSpawnParameters Params; Params.Name = CustomName.IsEmpty() ? NAME_None : FName(*CustomName);
-    FVector Loc(0,0,0);
-    if (Args->HasTypedField<EJson::Object>(TEXT("location")))
+    // 如果有 copy_from，优先使用复制模式
+    bool bIsCopyMode = !CopyFrom.IsEmpty() && CopyCount > 0;
+    if (bIsCopyMode) Count = CopyCount;
+
+    // 位置数组优先
+    TArray<FVector> Locations;
+    if (Args->HasTypedField<EJson::Array>(TEXT("locations")))
     {
-        const TSharedPtr<FJsonObject> L = Args->GetObjectField(TEXT("location"));
-        if (L->HasTypedField<EJson::Number>(TEXT("x"))) Loc.X = L->GetNumberField(TEXT("x"));
-        if (L->HasTypedField<EJson::Number>(TEXT("y"))) Loc.Y = L->GetNumberField(TEXT("y"));
-        if (L->HasTypedField<EJson::Number>(TEXT("z"))) Loc.Z = L->GetNumberField(TEXT("z"));
+        const TArray<TSharedPtr<FJsonValue>>& LocArr = Args->GetArrayField(TEXT("locations"));
+        for (const TSharedPtr<FJsonValue>& LocVal : LocArr)
+        {
+            if (LocVal->Type == EJson::Object)
+            {
+                auto LocObj = LocVal->AsObject();
+                FVector Loc;
+                if (LocObj->HasField(TEXT("x"))) Loc.X = LocObj->GetNumberField(TEXT("x"));
+                if (LocObj->HasField(TEXT("y"))) Loc.Y = LocObj->GetNumberField(TEXT("y"));
+                if (LocObj->HasField(TEXT("z"))) Loc.Z = LocObj->GetNumberField(TEXT("z"));
+                Locations.Add(Loc);
+            }
+        }
+    }
+    // 如果有单个 location，填充到数组
+    else if (Args->HasTypedField<EJson::Object>(TEXT("location")))
+    {
+        auto LocObj = Args->GetObjectField(TEXT("location"));
+        FVector Loc;
+        if (LocObj->HasField(TEXT("x"))) Loc.X = LocObj->GetNumberField(TEXT("x"));
+        if (LocObj->HasField(TEXT("y"))) Loc.Y = LocObj->GetNumberField(TEXT("y"));
+        if (LocObj->HasField(TEXT("z"))) Loc.Z = LocObj->GetNumberField(TEXT("z"));
+        Locations.Add(Loc);
     }
 
-    AActor* NewActor = nullptr;
-    if (Type.Equals(TEXT("empty"), ESearchCase::IgnoreCase))
+    // 如果位置数组不足 Count，补默认位置（递增偏移）
+    while (Locations.Num() < Count)
     {
-        NewActor = World->SpawnActor<AActor>(AActor::StaticClass(), Loc, FRotator::ZeroRotator, Params);
-    }
-    else if (Type.Equals(TEXT("point_light"), ESearchCase::IgnoreCase))
-    {
-        APointLight* Light = World->SpawnActor<APointLight>(APointLight::StaticClass(), Loc, FRotator::ZeroRotator, Params);
-        NewActor = Light;
-    }
-    else if (Type.Equals(TEXT("directional_light"), ESearchCase::IgnoreCase))
-    {
-        ADirectionalLight* Light = World->SpawnActor<ADirectionalLight>(ADirectionalLight::StaticClass(), Loc, FRotator::ZeroRotator, Params);
-        NewActor = Light;
-    }
-    else if (Type.Equals(TEXT("cube"), ESearchCase::IgnoreCase))
-    {
-        AStaticMeshActor* MeshActor = World->SpawnActor<AStaticMeshActor>(AStaticMeshActor::StaticClass(), Loc, FRotator::ZeroRotator, Params);
-        NewActor = MeshActor;
+        FVector LastLoc = Locations.Num() > 0 ? Locations.Last() : FVector::ZeroVector;
+        FVector Offset = FVector(200.0f * Locations.Num(), 0, 0); // 每多一个向 X 轴偏移 200cm
+        Locations.Add(LastLoc + Offset);
     }
 
-    if (!NewActor) return {false, TEXT("不支持的type或生成失败"), nullptr};
+    // ──────────────────────── 确定要创建的类 ────────────────────────
+    UClass* ActorClass = nullptr;
 
-    TSharedPtr<FJsonObject> Data = MakeShareable(new FJsonObject);
-    Data->SetStringField(TEXT("name"), NewActor->GetName());
-    Data->SetStringField(TEXT("class"), NewActor->GetClass()->GetName());
-    Data->SetStringField(TEXT("location"), NewActor->GetActorLocation().ToString());
-    return {true, TEXT("已创建Actor"), Data};
+    if (!TypeStr.IsEmpty())
+    {
+        // 内置类型映射
+        if (TypeStr.Equals(TEXT("empty"), ESearchCase::IgnoreCase))
+            ActorClass = AActor::StaticClass();
+        else if (TypeStr.Equals(TEXT("point_light"), ESearchCase::IgnoreCase))
+            ActorClass = APointLight::StaticClass();
+        else if (TypeStr.Equals(TEXT("directional_light"), ESearchCase::IgnoreCase))
+            ActorClass = ADirectionalLight::StaticClass();
+        else if (TypeStr.Equals(TEXT("cube"), ESearchCase::IgnoreCase) ||
+                 TypeStr.Equals(TEXT("sphere"), ESearchCase::IgnoreCase) ||
+                 TypeStr.Equals(TEXT("cylinder"), ESearchCase::IgnoreCase) ||
+                 TypeStr.Equals(TEXT("plane"), ESearchCase::IgnoreCase))
+        {
+            // mesh 类型保持原有逻辑
+            FString MeshPath = TEXT("/Engine/BasicShapes/Cube.Cube");
+            if (TypeStr == TEXT("sphere")) MeshPath = TEXT("/Engine/BasicShapes/Sphere.Sphere");
+            else if (TypeStr == TEXT("cylinder")) MeshPath = TEXT("/Engine/BasicShapes/Cylinder.Cylinder");
+            else if (TypeStr == TEXT("plane")) MeshPath = TEXT("/Engine/BasicShapes/Plane.Plane");
+
+            UStaticMesh* Mesh = Cast<UStaticMesh>(StaticLoadObject(UStaticMesh::StaticClass(), nullptr, *MeshPath));
+            if (!Mesh) return {false, TEXT("无法加载网格资源"), nullptr};
+
+            // 这里可以直接创建并返回，不走下面的通用创建
+            TArray<TSharedPtr<FJsonValue>> CreatedActors;
+            for (int32 i = 0; i < Count; ++i)
+            {
+                FString FinalName = NamePrefix.IsEmpty() ? TEXT("") : NamePrefix + TEXT("_") + FString::FromInt(i+1);
+                FActorSpawnParameters SpawnParams;
+                if (!FinalName.IsEmpty()) SpawnParams.Name = FName(*FinalName);
+
+                AStaticMeshActor* MeshActor = World->SpawnActorDeferred<AStaticMeshActor>(
+                    AStaticMeshActor::StaticClass(),
+                    FTransform(FRotator::ZeroRotator, Locations[i]),
+                    nullptr, nullptr,
+                    ESpawnActorCollisionHandlingMethod::AlwaysSpawn
+                );
+
+                if (MeshActor)
+                {
+                    if (!FinalName.IsEmpty()) MeshActor->SetActorLabel(FinalName);
+                    UStaticMeshComponent* MeshComp = MeshActor->GetStaticMeshComponent();
+                    if (MeshComp) MeshComp->SetStaticMesh(Mesh);
+                    MeshActor->FinishSpawning(FTransform(FRotator::ZeroRotator, Locations[i]));
+
+                    TSharedPtr<FJsonObject> Data = MakeShareable(new FJsonObject);
+                    Data->SetStringField(TEXT("name"), MeshActor->GetName());
+                    Data->SetStringField(TEXT("label"), MeshActor->GetActorLabel());
+                    CreatedActors.Add(MakeShared<FJsonValueObject>(Data));
+                }
+            }
+
+            if (CreatedActors.Num() == 0) return {false, TEXT("StaticMeshActor 创建失败"), nullptr};
+
+            TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+            Result->SetArrayField(TEXT("created_actors"), CreatedActors);
+            return {true, FString::Printf(TEXT("已创建 %d 个 %s"), CreatedActors.Num(), *TypeStr), Result};
+        }
+        else
+        {
+            // 尝试作为类名加载
+            ActorClass = FindObject<UClass>(ANY_PACKAGE, *TypeStr);
+            if (!ActorClass)
+            {
+                FString WithC = TypeStr + TEXT("_C");
+                ActorClass = FindObject<UClass>(ANY_PACKAGE, *WithC);
+            }
+            if (!ActorClass)
+            {
+                UE_LOG(LogSmartUEAssistantAI, Error, TEXT("未找到类或不支持类型: %s"), *TypeStr);
+                return {false, FString::Printf(TEXT("未找到类或不支持类型: %s"), *TypeStr), nullptr};
+            }
+        }
+    }
+    else if (!bIsCopyMode)
+    {
+        return {false, TEXT("缺少 type 参数或 copy_from"), nullptr};
+    }
+
+    // ──────────────────────── 复制模式 ────────────────────────
+    TArray<AActor*> SourceActors;
+    if (bIsCopyMode)
+    {
+        AActor* Source = FindActorByNameFuzzy(World, CopyFrom, false);
+        if (!Source)
+        {
+            return {false, FString::Printf(TEXT("copy_from 未找到 Actor: %s"), *CopyFrom), nullptr};
+        }
+        SourceActors.Add(Source);
+    }
+
+    // ──────────────────────── 开始创建 ────────────────────────
+    TArray<TSharedPtr<FJsonValue>> CreatedActors;
+
+    for (int32 i = 0; i < Count; ++i)
+    {
+        FString FinalName = NamePrefix;
+        if (Count > 1) FinalName += FString::Printf(TEXT("_%d"), i+1);
+
+        FActorSpawnParameters SpawnParams;
+        if (!FinalName.IsEmpty()) SpawnParams.Name = FName(*FinalName);
+
+        FTransform SpawnTransform(FRotator::ZeroRotator, Locations[i]);
+
+        AActor* NewActor = nullptr;
+
+        if (bIsCopyMode)
+        {
+            // 获取编辑器子系统（这是处理克隆最标准、最稳定的方式）
+            UEditorActorSubsystem* EditorActorSubsystem = GEditor->GetEditorSubsystem<UEditorActorSubsystem>();
+    
+            if (EditorActorSubsystem)
+            {
+                // 这一步会处理：内存克隆、大纲注册、组件注册、Undo记录
+                NewActor = EditorActorSubsystem->DuplicateActor(SourceActors[0], World);
+        
+                if (NewActor)
+                {
+                    // 1. 设置变换
+                    NewActor->SetActorTransform(SpawnTransform);
+                    if (!FinalName.IsEmpty()) NewActor->SetActorLabel(FinalName);
+
+                    // 2. 核心补救：强制注册所有组件（解决看不见的问题）
+                    NewActor->RegisterAllComponents();
+
+                    // 3. 强制通知编辑器：Actor 已经移动并需要重新渲染
+                    NewActor->PostEditMove(true);
+
+                    // 4. 确保在场景大纲中显示
+                    NewActor->MarkComponentsRenderStateDirty();
+                }
+            }
+            else
+            {
+                return {false, TEXT("复制失败"), nullptr};
+            }
+        }
+        else
+        {
+            // 正常创建
+            NewActor = World->SpawnActor<AActor>(ActorClass, SpawnTransform, SpawnParams);
+        }
+
+        if (NewActor && IsValid(NewActor))
+        {
+            if (!FinalName.IsEmpty()) NewActor->SetActorLabel(FinalName);
+
+            TSharedPtr<FJsonObject> Data = MakeShareable(new FJsonObject);
+            Data->SetStringField(TEXT("name"), NewActor->GetName());
+            Data->SetStringField(TEXT("label"), NewActor->GetActorLabel());
+            Data->SetStringField(TEXT("class"), NewActor->GetClass()->GetName());
+            Data->SetStringField(TEXT("location"), NewActor->GetActorLocation().ToString());
+            CreatedActors.Add(MakeShared<FJsonValueObject>(Data));
+        }
+        else
+        {
+            UE_LOG(LogSmartUEAssistantAI, Error, TEXT("第 %d 个 Actor 创建/复制失败"), i+1);
+        }
+    }
+
+    if (CreatedActors.Num() == 0)
+    {
+        return {false, TEXT("所有 Actor 创建失败"), nullptr};
+    }
+
+    // 刷新编辑器
+    if (GEditor)
+    {
+        GEditor->RedrawLevelEditingViewports(true);
+        GEditor->NoteSelectionChange();
+    }
+
+    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+    Result->SetArrayField(TEXT("created_actors"), CreatedActors);
+    Result->SetNumberField(TEXT("count"), CreatedActors.Num());
+
+    return {true, FString::Printf(TEXT("已创建 %d 个 Actor"), CreatedActors.Num()), Result};
 }
 
 // ---------------- FDeleteActorTool ----------------
