@@ -139,6 +139,14 @@ private:
 	TSharedPtr<FActiveTimerHandle> StreamingTimerHandle; // 修正：改为 TSharedPtr 以支持 ToSharedRef()
 	float StreamingInterval = 0.03f;
 
+	// 动画平滑算法所需
+	double StreamingStartTime = 0.0;
+	float TotalDuration = 2.0f;
+
+	// 窗口引用缓存
+	TWeakPtr<SWindow> CachedDocWindow;
+	TWeakPtr<SWindow> CachedFeedbackWindow;
+
 	// 模型切换
 	TArray<FString> ModelOptions { TEXT("GPT-4.1"), TEXT("GPT-4o"), TEXT("GPT-5") };
 	int32 CurrentModelIndex = 2; // 默认 GPT-5
@@ -168,4 +176,6 @@ private:
 	void CancelRetrySchedule();              // 取消已安排的重试
 	void TriggerRetry();                     // 立即触发重试发送
 	EActiveTimerReturnType HandleRetryTick(double CurrentTime, float DeltaTime); // 倒计时回调
+
+
 };

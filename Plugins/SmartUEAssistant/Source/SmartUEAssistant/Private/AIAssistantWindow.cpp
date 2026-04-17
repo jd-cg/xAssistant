@@ -568,7 +568,7 @@ void SAIAssistantWindow::StartStreamingDisplay(const FString& FullText)
 {
     // 短文本直接一次性显示，避免无谓的打字机动画
     const FString Trimmed = FullText; // Sanitize 已做修整
-    if (Trimmed.Len() <= 120)
+    if (Trimmed.Len() <= 10)
     {
         AddMessageToChat(FString::Printf(TEXT("AI: %s"), *Trimmed), false);
         UpdateRequestUI();
@@ -585,6 +585,8 @@ void SAIAssistantWindow::StartStreamingDisplay(const FString& FullText)
     const FDateTime Now = FDateTime::Now();
     const FString TimeStr = FString::Printf(TEXT("%s.%03d"), *Now.ToString(TEXT("%Y-%m-%d %H:%M:%S")), Now.GetMillisecond());
     
+
+
     TSharedRef<SMultiLineEditableTextBox> TextWidget = SNew(SMultiLineEditableTextBox)
         .Text(FText::FromString(TEXT("AI: ")))
         .IsReadOnly(true)
@@ -675,38 +677,43 @@ void SAIAssistantWindow::CancelStreaming()
 
 EActiveTimerReturnType SAIAssistantWindow::HandleStreamTick(double CurrentTime, float DeltaTime)
 {
-    // 检查是否有有效的流式显示文本框
-    if (!CurrentAIStreamingEditableBlock.IsValid() && !CurrentAIStreamingBlock.IsValid())
+    // 1. 检查任意一个指针是否有效
+    auto EditableBlock = CurrentAIStreamingEditableBlock.Pin();
+    auto Block = CurrentAIStreamingBlock.Pin();
+
+    if (!EditableBlock.IsValid() && !Block.IsValid())
     {
         return EActiveTimerReturnType::Stop;
     }
-    
-    const int32 Chunk = FMath::Clamp(30, 1, 200); // 每次追加字符数
-    const int32 Remaining = StreamingTarget.Len() - StreamingIndex;
-    const int32 Take = FMath::Min(Chunk, Remaining);
 
-    const FString Prefix = TEXT("AI: ");
-    const FString SoFar = StreamingTarget.Left(StreamingIndex + Take);
+    // 2. 沿用方法 A 的时间进度算法（更丝滑）
+    const double Now = FPlatformTime::Seconds();
+    const float Elapsed = static_cast<float>(Now - StreamingStartTime);
+    const float Progress = FMath::Clamp(Elapsed / TotalDuration, 0.0f, 1.0f);
 
-    // 优先使用可编辑文本框（新方案）
-    if (TSharedPtr<SMultiLineEditableTextBox> EditableBlock = CurrentAIStreamingEditableBlock.Pin())
+    // 使用平滑插值
+    const float EasedProgress = FMath::InterpEaseInOut(0.0f, 1.0f, Progress, 2.0f);
+    const int32 CharCount = FMath::FloorToInt(StreamingTarget.Len() * EasedProgress);
+    const FString SoFar = StreamingTarget.Left(CharCount);
+
+    // 3. 赋值（优先 EditableBlock）
+    const FText FinalText = FText::FromString(TEXT("AI: ") + SoFar);
+    if (EditableBlock.IsValid())
     {
-        EditableBlock->SetText(FText::FromString(Prefix + SoFar));
+        EditableBlock->SetText(FinalText);
     }
-    // 兼容旧的STextBlock方案
-    else if (TSharedPtr<STextBlock> Block = CurrentAIStreamingBlock.Pin())
+    else if (Block.IsValid())
     {
-        Block->SetText(FText::FromString(Prefix + SoFar));
+        Block->SetText(FinalText);
     }
-    
+
+    // 4. 每一帧都尝试滚动（确保新生成的行立即可见）
     ChatScrollBox->ScrollToEnd();
 
-    StreamingIndex += Take;
-    if (StreamingIndex >= StreamingTarget.Len())
+    // 5. 结束判定
+    if (Progress >= 1.0f)
     {
-        // 结束
         StreamingTarget.Reset();
-        StreamingIndex = 0;
         CurrentAIStreamingBlock.Reset();
         CurrentAIStreamingEditableBlock.Reset();
         UpdateRequestUI();
@@ -718,17 +725,32 @@ EActiveTimerReturnType SAIAssistantWindow::HandleStreamTick(double CurrentTime, 
 
 void SAIAssistantWindow::AddMessageToChat(const FString& Message, bool bIsUser)
 {
+    // 1. 创建 UI 组件
     TSharedRef<SWidget> Bubble = CreateMessageBubble(Message, bIsUser, nullptr);
     TSharedRef<SWidget> Row = CreateMessageRow(Bubble, bIsUser);
 
-    // 添加到聊天记录（内容区居中，左右对齐）
+    // 2. 数量控制（放在添加之前）
+    static const int32 MAX_CHAT_MESSAGES = 200;
+    // 获取当前子控件列表
+    FChildren* Children = ChatScrollBox->GetChildren();
+
+    while (Children->Num() >= MAX_CHAT_MESSAGES)
+    {
+        // 获取第 0 个子控件的引用
+        TSharedRef<SWidget> FirstChild = Children->GetChildAt(0);
+
+        // 使用 SScrollBox 提供的 RemoveSlot 方法移除它
+        ChatScrollBox->RemoveSlot(FirstChild);
+    }
+    // 3. 执行添加
     ChatScrollBox->AddSlot()
         .Padding(FMargin(0, 6))
         [
             Row
         ];
-    
-    // 滚动到底部
+
+    // 4. 强制延迟一帧滚动或立即滚动
+    // 对于长文本，有时需要下一帧滚动才能准确获取新的 Layout 高度
     ChatScrollBox->ScrollToEnd();
 }
 
@@ -925,64 +947,68 @@ FReply SAIAssistantWindow::OnSettingsClicked()
 
 FReply SAIAssistantWindow::OnDocumentationClicked()
 {
+  
+    TSharedPtr<SWindow> ExistingWindow = CachedDocWindow.Pin();
+    if (ExistingWindow.IsValid() && FSlateApplication::Get().FindWidgetWindow(ExistingWindow.ToSharedRef()).IsValid())
+    {
+        // 窗口存在，直接置顶
+        ExistingWindow->BringToFront();
+        return FReply::Handled();
+    }
 
-    // 文档的 URL
+
     FString URL = TEXT("https://github.com/jd-cg/xAssistant");
 
-    // 创建 WebBrowser 控件
     TSharedPtr<SWebBrowser> WebBrowserWidget = SNew(SWebBrowser)
         .InitialURL(URL)
         .SupportsTransparency(true)
-        .ShowControls(false) ; // 显示地址栏、刷新等按钮
+        .ShowControls(false);
 
-
-    // 创建一个新窗口显示浏览器
     TSharedRef<SWindow> WebWindow = SNew(SWindow)
-        .Title(LOCTEXT("WebWindowTitle", "说明文档")) // 使用 LOCTEXT 包装
+        .Title(LOCTEXT("WebWindowTitle", "说明文档"))
         .ClientSize(FVector2D(1280, 800))
         .ScreenPosition(FVector2D(200, 200))
         .SupportsMaximize(true)
         .SupportsMinimize(true);
 
-
-
     WebWindow->SetContent(WebBrowserWidget.ToSharedRef());
-
-    // 打开窗口
     FSlateApplication::Get().AddWindow(WebWindow);
 
-    AddMessageToChat(TEXT("AI: 已为您打开内置文档"), false);
+    CachedDocWindow = WebWindow;
 
+    AddMessageToChat(TEXT("AI: 已为您打开内置文档"), false);
     return FReply::Handled();
 }
 
 FReply SAIAssistantWindow::OnFeedbackClicked()
 {
 
-    // 反馈通道的 URL
+    TSharedPtr<SWindow> ExistingWindow = CachedDocWindow.Pin();
+    if (ExistingWindow.IsValid() && FSlateApplication::Get().FindWidgetWindow(ExistingWindow.ToSharedRef()).IsValid())
+    {
+        // 窗口存在，直接置顶
+        ExistingWindow->BringToFront();
+        return FReply::Handled();
+    }
+
     FString URL = TEXT("http://www.jd-cg.com/");
 
-    // 创建 WebBrowser 控件
     TSharedPtr<SWebBrowser> WebBrowserWidget = SNew(SWebBrowser)
         .InitialURL(URL)
         .SupportsTransparency(true)
-        .ShowControls(false) ; // 显示地址栏、刷新等按钮
+        .ShowControls(false);
 
-
-    // 创建一个新窗口显示浏览器
     TSharedRef<SWindow> WebWindow = SNew(SWindow)
-        .Title(LOCTEXT("WebWindowTitle", "反馈通道")) // 使用 LOCTEXT 包装
+        .Title(LOCTEXT("WebWindowTitle", "反馈通道"))
         .ClientSize(FVector2D(1280, 800))
         .ScreenPosition(FVector2D(200, 200))
         .SupportsMaximize(true)
         .SupportsMinimize(true);
 
-
-
     WebWindow->SetContent(WebBrowserWidget.ToSharedRef());
-
-    // 打开窗口
     FSlateApplication::Get().AddWindow(WebWindow);
+
+    CachedFeedbackWindow = WebWindow;
 
     AddMessageToChat(TEXT("AI: 已为您打开反馈通道"), false);
     return FReply::Handled();
@@ -996,14 +1022,15 @@ FReply SAIAssistantWindow::OnAttachFileClicked()
 //hys,执行虚幻内置高分辨率截图命令
 FReply SAIAssistantWindow::OnScreenshotClicked()
 {
-    // 先给反馈（
-    AddMessageToChat(TEXT("AI: 正在生成高分辨率截图..."), false);
-    // 4 表示 4 倍分辨率（视口 1080p → 输出约 4K），可改成 2、8、16 等
-    FString Command = TEXT("HighResShot 4");
+    USmartUEAssistantSettings* Settings = GetMutableDefault<USmartUEAssistantSettings>();
+    const int32 Multiplier = Settings ? Settings->ScreenshotResolutionMultiplier : 4;
+
+    AddMessageToChat(FString::Printf(TEXT("AI: 正在生成 %dx 高分辨率截图..."), Multiplier), false);
+
+    FString Command = FString::Printf(TEXT("HighResShot %d"), Multiplier);
     if (GEditor)
     {
         GEditor->Exec(GEditor->GetEditorWorldContext().World(), *Command);
-    
     }
     else
     {
@@ -1011,7 +1038,6 @@ FReply SAIAssistantWindow::OnScreenshotClicked()
     }
 
     return FReply::Handled();
-
 }
 
 FReply SAIAssistantWindow::OnCodeBlockClicked()

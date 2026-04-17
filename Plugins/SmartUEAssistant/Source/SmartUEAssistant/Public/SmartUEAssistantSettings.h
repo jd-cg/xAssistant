@@ -95,4 +95,8 @@ public:
 	/** Maximum number of conversation rounds to keep in memory (0 = no history) */
 	UPROPERTY(EditAnywhere, Config, Category="AI|Memory", meta=(ClampMin="0", ClampMax="50", Tooltip="Max conversation rounds to remember"))
 	int32 MaxConversationRounds = 6;
+
+	/** High resolution screenshot resolution multiplier (1-10)-截图分辨率倍率  */
+	UPROPERTY(Config, EditAnywhere, Category = "Editor Features", meta = (ClampMin = "1", ClampMax = "10", Tooltip = "Multiplier for HighResShot command"))
+	int32 ScreenshotResolutionMultiplier = 4;
 };
