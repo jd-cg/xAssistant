@@ -18,7 +18,14 @@
     {
       "Name": "SmartUEAssistant",
       "Type": "Editor",
-      "LoadingPhase": "Default"
+      "LoadingPhase": "Default",
+      "AdditionalDependencies": [ "WebBrowser", "WebBrowserWidget" ]
     }
-  ]
+  ],
+  "Plugins": [
+  {
+    "Name": "WebBrowserWidget",
+    "Enabled": true
+  }
+]
 }

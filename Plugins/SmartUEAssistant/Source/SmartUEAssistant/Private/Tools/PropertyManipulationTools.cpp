@@ -503,8 +503,145 @@ FAdjustPropertyTool::FAdjustPropertyTool()
 
 FAIToolResult FAdjustPropertyTool::Execute(const TSharedPtr<FJsonObject>& Args)
 {
-	// Implementation similar to SetActorPropertyTool but with relative adjustment
-	return {false, TEXT("Not yet implemented"), nullptr};
+	UE_LOG(LogSmartUEAssistantTools, Log, TEXT("╔═══════════════════════════════════════════"));
+	UE_LOG(LogSmartUEAssistantTools, Log, TEXT("║ ADJUST_PROPERTY Tool Executing"));
+	UE_LOG(LogSmartUEAssistantTools, Log, TEXT("╚═══════════════════════════════════════════"));
+
+	if (!GEditor)
+	{
+		return {false, TEXT("Editor not available"), nullptr};
+	}
+
+	USelection* SelectedActors = GEditor->GetSelectedActors();
+	if (!SelectedActors || SelectedActors->Num() == 0)
+	{
+		return {false, TEXT("No actors selected"), nullptr};
+	}
+
+	FString PropertyPath = Args->GetStringField(TEXT("PropertyPath"));
+	double OffsetValue = Args->GetNumberField(TEXT("Offset"));
+	bool bMultiply = Args->HasField(TEXT("Multiply")) ? Args->GetBoolField(TEXT("Multiply")) : false;
+
+	UE_LOG(LogSmartUEAssistantTools, Log, TEXT("PropertyPath: %s"), *PropertyPath);
+	UE_LOG(LogSmartUEAssistantTools, Log, TEXT("Offset: %f, Multiply: %s"), OffsetValue, bMultiply ? TEXT("true") : TEXT("false"));
+
+	int32 ModifiedCount = 0;
+	TArray<FString> Errors;
+
+	for (FSelectionIterator It(*SelectedActors); It; ++It)
+	{
+		if (AActor* Actor = Cast<AActor>(*It))
+		{
+			UE_LOG(LogSmartUEAssistantTools, Log, TEXT("Processing Actor: %s"), *Actor->GetName());
+
+			// Step 1: Get current value
+			UObject* Container = nullptr;
+			FProperty* Property = FPropertyModificationHelper::FindPropertyByPath(Actor, PropertyPath, Container);
+
+			if (!Property || !Container)
+			{
+				FString Error = FString::Printf(TEXT("Property not found: %s on %s"), *PropertyPath, *Actor->GetName());
+				Errors.AddUnique(Error);
+				UE_LOG(LogSmartUEAssistantTools, Warning, TEXT("  %s"), *Error);
+				continue;
+			}
+
+			void* ValuePtr = Property->ContainerPtrToValuePtr<void>(Container);
+
+			// Step 2: Adjust the value based on property type
+			bool bSuccess = false;
+
+			// Float
+			if (FFloatProperty* FloatProp = CastField<FFloatProperty>(Property))
+			{
+				float CurrentValue = FloatProp->GetPropertyValue(ValuePtr);
+				float NewValue = bMultiply ? (CurrentValue * OffsetValue) : (CurrentValue + OffsetValue);
+				FloatProp->SetPropertyValue(ValuePtr, NewValue);
+				bSuccess = true;
+				UE_LOG(LogSmartUEAssistantTools, Log, TEXT("  Float: %f -> %f"), CurrentValue, NewValue);
+			}
+			// Double
+			else if (FDoubleProperty* DoubleProp = CastField<FDoubleProperty>(Property))
+			{
+				double CurrentValue = DoubleProp->GetPropertyValue(ValuePtr);
+				double NewValue = bMultiply ? (CurrentValue * OffsetValue) : (CurrentValue + OffsetValue);
+				DoubleProp->SetPropertyValue(ValuePtr, NewValue);
+				bSuccess = true;
+				UE_LOG(LogSmartUEAssistantTools, Log, TEXT("  Double: %f -> %f"), CurrentValue, NewValue);
+			}
+			// Int
+			else if (FIntProperty* IntProp = CastField<FIntProperty>(Property))
+			{
+				int32 CurrentValue = IntProp->GetPropertyValue(ValuePtr);
+				int32 NewValue = bMultiply ? FMath::RoundToInt(CurrentValue * OffsetValue) : FMath::RoundToInt(CurrentValue + OffsetValue);
+				IntProp->SetPropertyValue(ValuePtr, NewValue);
+				bSuccess = true;
+				UE_LOG(LogSmartUEAssistantTools, Log, TEXT("  Int: %d -> %d"), CurrentValue, NewValue);
+			}
+			// Byte
+			else if (FByteProperty* ByteProp = CastField<FByteProperty>(Property))
+			{
+				uint8 CurrentValue = ByteProp->GetPropertyValue(ValuePtr);
+				int32 NewValue = bMultiply ? FMath::RoundToInt(CurrentValue * OffsetValue) : FMath::RoundToInt(CurrentValue + OffsetValue);
+				ByteProp->SetPropertyValue(ValuePtr, FMath::Clamp(NewValue, 0, 255));
+				bSuccess = true;
+				UE_LOG(LogSmartUEAssistantTools, Log, TEXT("  Byte: %d -> %d"), CurrentValue, NewValue);
+			}
+			else
+			{
+				FString Error = FString::Printf(TEXT("Property '%s' is not a numeric type"), *PropertyPath);
+				Errors.AddUnique(Error);
+				UE_LOG(LogSmartUEAssistantTools, Error, TEXT("  %s"), *Error);
+				continue;
+			}
+
+			// Step 3: Apply proper UE notifications
+			if (bSuccess)
+			{
+				Container->Modify();
+				FPropertyChangedEvent PropertyChangedEvent(Property, EPropertyChangeType::ValueSet);
+				Container->PostEditChangeProperty(PropertyChangedEvent);
+
+				if (UActorComponent* Component = Cast<UActorComponent>(Container))
+				{
+					Component->MarkRenderStateDirty();
+				}
+
+				ModifiedCount++;
+				UE_LOG(LogSmartUEAssistantTools, Log, TEXT("  ✓ Adjusted successfully"));
+			}
+		}
+	}
+
+	// Refresh viewports
+	if (ModifiedCount > 0 && GEditor)
+	{
+		GEditor->RedrawAllViewports();
+		GEditor->NoteSelectionChange();
+	}
+
+	FString Message;
+	if (ModifiedCount > 0)
+	{
+		Message = FString::Printf(TEXT("Adjusted property '%s' for %d actors (%s: %f)"),
+			*PropertyPath, ModifiedCount, bMultiply ? TEXT("Multiply" ) : TEXT("Offset"), OffsetValue);
+		if (Errors.Num() > 0)
+		{
+			Message += FString::Printf(TEXT(" (%d errors)"), Errors.Num());
+		}
+		UE_LOG(LogSmartUEAssistantTools, Log, TEXT("╔═══════════════════════════════════════════"));
+		UE_LOG(LogSmartUEAssistantTools, Log, TEXT("║ RESULT: SUCCESS"));
+		UE_LOG(LogSmartUEAssistantTools, Log, TEXT("║ %s"), *Message);
+		UE_LOG(LogSmartUEAssistantTools, Log, TEXT("╚═══════════════════════════════════════════"));
+		return {true, Message, nullptr};
+	}
+
+	Message = FString::Printf(TEXT("Failed to adjust property. Errors: %s"), *FString::Join(Errors, TEXT("; ")));
+	UE_LOG(LogSmartUEAssistantTools, Error, TEXT("╔═══════════════════════════════════════════"));
+	UE_LOG(LogSmartUEAssistantTools, Error, TEXT("║ RESULT: FAILED"));
+	UE_LOG(LogSmartUEAssistantTools, Error, TEXT("║ %s"), *Message);
+	UE_LOG(LogSmartUEAssistantTools, Error, TEXT("╚═══════════════════════════════════════════"));
+	return {false, Message, nullptr};
 }
 
 // ==================== Copy Properties Tool ====================
@@ -523,12 +660,182 @@ FCopyPropertiesTool::FCopyPropertiesTool()
 
 FAIToolResult FCopyPropertiesTool::Execute(const TSharedPtr<FJsonObject>& Args)
 {
-	// Implementation for copying properties between actors
-	return {false, TEXT("Not yet implemented"), nullptr};
+	UE_LOG(LogSmartUEAssistantTools, Log, TEXT("╔═══════════════════════════════════════════"));
+	UE_LOG(LogSmartUEAssistantTools, Log, TEXT("║ COPY_PROPERTIES Tool Executing"));
+	UE_LOG(LogSmartUEAssistantTools, Log, TEXT("╚═══════════════════════════════════════════"));
+
+	if (!GEditor)
+	{
+		return {false, TEXT("Editor not available"), nullptr};
+	}
+
+	UWorld* World = GEditor->GetEditorWorldContext().World();
+	if (!World)
+	{
+		return {false, TEXT("World not available"), nullptr};
+	}
+
+	// Get source actor name
+	FString SourceActorName = Args->GetStringField(TEXT("SourceActor"));
+	UE_LOG(LogSmartUEAssistantTools, Log, TEXT("Source Actor: %s"), *SourceActorName);
+
+	// Find source actor
+	AActor* SourceActor = nullptr;
+	for (TActorIterator<AActor> It(World); It; ++It)
+	{
+		AActor* Actor = *It;
+		if (Actor->GetName().Equals(SourceActorName, ESearchCase::IgnoreCase) ||
+			Actor->GetActorLabel().Equals(SourceActorName, ESearchCase::IgnoreCase))
+		{
+			SourceActor = Actor;
+			break;
+		}
+	}
+
+	if (!SourceActor)
+	{
+		return {false, FString::Printf(TEXT("Source actor not found: %s"), *SourceActorName), nullptr};
+	}
+
+	UE_LOG(LogSmartUEAssistantTools, Log, TEXT("Found source actor: %s (Label: %s)"), *SourceActor->GetName(), *SourceActor->GetActorLabel());
+
+	// Get property paths to copy
+	const TArray<TSharedPtr<FJsonValue>>* PropertyPathsArray;
+	if (!Args->TryGetArrayField(TEXT("PropertyPaths"), PropertyPathsArray))
+	{
+		return {false, TEXT("PropertyPaths must be an array of strings"), nullptr};
+	}
+
+	TArray<FString> PropertyPaths;
+	for (const TSharedPtr<FJsonValue>& PathValue : *PropertyPathsArray)
+	{
+		FString Path;
+		if (PathValue->TryGetString(Path))
+		{
+			PropertyPaths.Add(Path);
+		}
+	}
+
+	if (PropertyPaths.Num() == 0)
+	{
+		return {false, TEXT("No property paths provided"), nullptr};
+	}
+
+	UE_LOG(LogSmartUEAssistantTools, Log, TEXT("Properties to copy: %s"), *FString::Join(PropertyPaths, TEXT(", ")));
+
+	// Get target actors
+	bool bApplyToSelected = Args->HasField(TEXT("ApplyToSelected")) ? Args->GetBoolField(TEXT("ApplyToSelected")) : true;
+	TArray<AActor*> TargetActors;
+
+	if (bApplyToSelected)
+	{
+		USelection* SelectedActors = GEditor->GetSelectedActors();
+		if (SelectedActors && SelectedActors->Num() > 0)
+		{
+			for (FSelectionIterator It(*SelectedActors); It; ++It)
+			{
+				if (AActor* Actor = Cast<AActor>(*It))
+				{
+					// Skip source actor
+					if (Actor != SourceActor)
+					{
+						TargetActors.Add(Actor);
+					}
+				}
+			}
+		}
+	}
+
+	if (TargetActors.Num() == 0)
+	{
+		return {false, TEXT("No target actors selected (or only source actor is selected)"), nullptr};
+	}
+
+	UE_LOG(LogSmartUEAssistantTools, Log, TEXT("Target actors count: %d"), TargetActors.Num());
+
+	// Copy properties
+	int32 TotalCopied = 0;
+	TArray<FString> FailedProperties;
+
+	for (const FString& PropertyPath : PropertyPaths)
+	{
+		// Get value from source
+		UObject* SourceContainer = nullptr;
+		FProperty* SourceProperty = FPropertyModificationHelper::FindPropertyByPath(SourceActor, PropertyPath, SourceContainer);
+
+		if (!SourceProperty || !SourceContainer)
+		{
+			FailedProperties.Add(PropertyPath);
+			UE_LOG(LogSmartUEAssistantTools, Warning, TEXT("  Source property not found: %s"), *PropertyPath);
+			continue;
+		}
+
+		// Get source value as JSON
+		TSharedPtr<FJsonValue> SourceValue = FPropertyModificationHelper::GetPropertyValueAsJson(SourceProperty, SourceContainer);
+		if (!SourceValue.IsValid())
+		{
+			FailedProperties.Add(PropertyPath);
+			UE_LOG(LogSmartUEAssistantTools, Warning, TEXT("  Failed to get source value: %s"), *PropertyPath);
+			continue;
+		}
+
+		UE_LOG(LogSmartUEAssistantTools, Log, TEXT("  Copying property: %s"), *PropertyPath);
+
+		// Apply to all target actors
+		for (AActor* TargetActor : TargetActors)
+		{
+			FString Error;
+			if (FPropertyModificationHelper::SetPropertyValue(TargetActor, PropertyPath, SourceValue, false, TEXT("Copy Property"), Error))
+			{
+				TotalCopied++;
+			}
+			else
+			{
+				UE_LOG(LogSmartUEAssistantTools, Warning, TEXT("    Failed on %s: %s"), *TargetActor->GetName(), *Error);
+			}
+		}
+	}
+
+	// Refresh viewports
+	if (TotalCopied > 0 && GEditor)
+	{
+		GEditor->RedrawAllViewports();
+		GEditor->NoteSelectionChange();
+	}
+
+	// Build result
+	FString Message;
+	if (TotalCopied > 0)
+	{
+		Message = FString::Printf(TEXT("Copied %d properties from '%s' to %d actors"),
+			TotalCopied, *SourceActor->GetActorLabel(), TargetActors.Num());
+		if (FailedProperties.Num() > 0)
+		{
+			Message += FString::Printf(TEXT(" (%d properties failed)"), FailedProperties.Num());
+		}
+		UE_LOG(LogSmartUEAssistantTools, Log, TEXT("╔═══════════════════════════════════════════"));
+		UE_LOG(LogSmartUEAssistantTools, Log, TEXT("║ RESULT: SUCCESS"));
+		UE_LOG(LogSmartUEAssistantTools, Log, TEXT("║ %s"), *Message);
+		UE_LOG(LogSmartUEAssistantTools, Log, TEXT("╚═══════════════════════════════════════════"));
+
+		TSharedPtr<FJsonObject> ResultData = MakeShareable(new FJsonObject);
+		ResultData->SetNumberField(TEXT("total_copied"), TotalCopied);
+		ResultData->SetNumberField(TEXT("target_count"), TargetActors.Num());
+		ResultData->SetStringField(TEXT("source_actor"), SourceActor->GetActorLabel());
+
+		return {true, Message, ResultData};
+	}
+
+	Message = FString::Printf(TEXT("Failed to copy any properties. Failed: %s"), *FString::Join(FailedProperties, TEXT(", ")));
+	UE_LOG(LogSmartUEAssistantTools, Error, TEXT("╔═══════════════════════════════════════════"));
+	UE_LOG(LogSmartUEAssistantTools, Error, TEXT("║ RESULT: FAILED"));
+	UE_LOG(LogSmartUEAssistantTools, Error, TEXT("║ %s"), *Message);
+	UE_LOG(LogSmartUEAssistantTools, Error, TEXT("╚═══════════════════════════════════════════"));
+	return {false, Message, nullptr};
 }
 
 
-// �?自动注册工具
+// �?自动注册工具
 #include "ToolAutoRegister.h"
 
 REGISTER_EDITOR_TOOL(FSetActorPropertyTool)
